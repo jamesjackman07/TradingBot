@@ -22,3 +22,7 @@ class Portfolio:
     def equity(self, price):
 
         return self.cash + self.shares * price
+
+    def has_position(self):
+
+        return self.shares > 0

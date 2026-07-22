@@ -39,7 +39,8 @@ for trade in trades:
     print(
         f"{trade.trade_type:<5} "
         f"Day {trade.index:<3} "
-        f"Price ${trade.price:.2f}"
+        f"Price ${trade.price:.2f} "
+        f"Shares {trade.shares:.2f}"
     )
 
 # Plot the equity curve

@@ -6,3 +6,4 @@ class Trade:
     trade_type: str
     price: float
     index: int
+    shares: float
