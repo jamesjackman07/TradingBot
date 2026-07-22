@@ -1,31 +1,26 @@
-from bot.data import MarketData
+from bot.research import ResearchSession
+
 from bot.strategies.mean_reversion import MeanReversionStrategy
 from bot.strategies.sma_cross import SMACrossoverStrategy
 
-from backtesting.engine import BacktestEngine
 from backtesting.metrics import Metrics
 
 
-market = MarketData()
+session = ResearchSession("SPY")
 
-df = market.get_data("SPY")
-
-close = df["Close"]["SPY"]
 
 strategies = [
     ("Mean Reversion", MeanReversionStrategy()),
     ("SMA Crossover", SMACrossoverStrategy())
 ]
 
+
 results = []
+
 
 for name, strategy in strategies:
 
-    engine = BacktestEngine()
-
-    signals = strategy.generate_signals(close)
-
-    equity, trades = engine.run(close, signals)
+    equity, trades = session.run(strategy)
 
     final = equity["Equity"].iloc[-1]
 
@@ -38,10 +33,12 @@ for name, strategy in strategies:
         }
     )
 
+
 results.sort(
     key=lambda x: x["Return"],
     reverse=True
 )
+
 
 print()
 print("=" * 45)

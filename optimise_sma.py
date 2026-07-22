@@ -1,17 +1,12 @@
-from bot.data import MarketData
+from bot.research import ResearchSession
 from bot.strategies.sma_cross import SMACrossoverStrategy
 
-from backtesting.engine import BacktestEngine
 from backtesting.metrics import Metrics
 
 import pandas as pd
 
 
-market = MarketData()
-
-df = market.get_data("SPY")
-
-close = df["Close"]["SPY"]
+session = ResearchSession("SPY")
 
 
 fast_periods = [5, 10, 20]
@@ -35,24 +30,16 @@ for fast in fast_periods:
 
         strategy = SMACrossoverStrategy(fast, slow)
 
-        engine = BacktestEngine()
-
-        signals = strategy.generate_signals(close)
-
-        equity, trades = engine.run(close, signals)
+        equity, trades = session.run(strategy)
 
         final = equity["Equity"].iloc[-1]
-
-        total_return = Metrics.total_return(10000, final)
-
-        drawdown = Metrics.max_drawdown(equity["Equity"])
 
         results.append(
             {
                 "Fast": fast,
                 "Slow": slow,
-                "Return": total_return,
-                "Drawdown": drawdown,
+                "Return": Metrics.total_return(10000, final),
+                "Drawdown": Metrics.max_drawdown(equity["Equity"]),
                 "Trades": len(trades)
             }
         )
