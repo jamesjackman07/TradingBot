@@ -1,5 +1,7 @@
 import pandas as pd
 
+from backtesting.trade import Trade
+
 
 class BacktestEngine:
 
@@ -12,7 +14,6 @@ class BacktestEngine:
         shares = 0
 
         equity_curve = []
-
         trades = []
 
         for i in range(len(prices)):
@@ -27,11 +28,11 @@ class BacktestEngine:
                 cash = 0
 
                 trades.append(
-                    {
-                        "Type": "BUY",
-                        "Price": price,
-                        "Index": i
-                    }
+                    Trade(
+                        trade_type="BUY",
+                        price=price,
+                        index=i
+                    )
                 )
 
             # SELL
@@ -41,11 +42,11 @@ class BacktestEngine:
                 shares = 0
 
                 trades.append(
-                    {
-                        "Type": "SELL",
-                        "Price": price,
-                        "Index": i
-                    }
+                    Trade(
+                        trade_type="SELL",
+                        price=price,
+                        index=i
+                    )
                 )
 
             equity = cash + shares * price

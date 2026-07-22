@@ -1,0 +1,8 @@
+from dataclasses import dataclass
+
+
+@dataclass
+class Trade:
+    trade_type: str
+    price: float
+    index: int
