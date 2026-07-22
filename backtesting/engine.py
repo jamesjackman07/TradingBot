@@ -87,7 +87,10 @@ class BacktestEngine:
 
             shares = portfolio.shares
 
-            portfolio.sell(final_price)
+            portfolio.sell(
+                final_price,
+                self.risk.commission
+            )
 
             trades.append(
                 Trade(
@@ -100,8 +103,9 @@ class BacktestEngine:
 
             equity_curve[-1] = portfolio.equity(final_price)
 
-        return pd.DataFrame(
-            {
-                "Equity": equity_curve
-            }
-        ), trades
+        equity = pd.Series(
+            equity_curve,
+            name="Equity"
+        )
+
+        return equity, trades
