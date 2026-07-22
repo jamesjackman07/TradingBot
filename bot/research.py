@@ -1,10 +1,17 @@
 from bot.data import MarketData
+
 from backtesting.engine import BacktestEngine
+
+from risk.manager import RiskManager
 
 
 class ResearchSession:
 
-    def __init__(self, ticker="SPY"):
+    def __init__(
+        self,
+        ticker="SPY",
+        risk_manager=None
+    ):
 
         self.ticker = ticker
 
@@ -14,11 +21,15 @@ class ResearchSession:
 
         self.close = df["Close"][ticker]
 
-        self.engine = BacktestEngine()
+        self.engine = BacktestEngine(
+            risk_manager=risk_manager or RiskManager()
+        )
 
     def run(self, strategy):
 
-        signals = strategy.generate_signals(self.close)
+        signals = strategy.generate_signals(
+            self.close
+        )
 
         equity, trades = self.engine.run(
             self.close,
