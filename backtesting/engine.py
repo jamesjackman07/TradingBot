@@ -1,6 +1,7 @@
 import pandas as pd
 
 from backtesting.trade import Trade
+from backtesting.portfolio import Portfolio
 
 
 class BacktestEngine:
@@ -10,8 +11,7 @@ class BacktestEngine:
 
     def run(self, prices, signals):
 
-        cash = self.initial_cash
-        shares = 0
+        portfolio = Portfolio(self.initial_cash)
 
         equity_curve = []
         trades = []
@@ -22,10 +22,9 @@ class BacktestEngine:
             signal = signals[i]
 
             # BUY
-            if signal == "BUY" and shares == 0:
+            if signal == "BUY" and portfolio.shares == 0:
 
-                shares = cash / price
-                cash = 0
+                portfolio.buy(price)
 
                 trades.append(
                     Trade(
@@ -36,10 +35,9 @@ class BacktestEngine:
                 )
 
             # SELL
-            elif signal == "SELL" and shares > 0:
+            elif signal == "SELL" and portfolio.shares > 0:
 
-                cash = shares * price
-                shares = 0
+                portfolio.sell(price)
 
                 trades.append(
                     Trade(
@@ -49,7 +47,7 @@ class BacktestEngine:
                     )
                 )
 
-            equity = cash + shares * price
+            equity = portfolio.equity(price)
             equity_curve.append(equity)
 
         return pd.DataFrame(
