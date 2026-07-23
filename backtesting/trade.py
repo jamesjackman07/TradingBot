@@ -7,3 +7,8 @@ class Trade:
     price: float
     index: int
     shares: float
+    reason: str = "SIGNAL"
+
+    @property
+    def value(self):
+        return self.price * self.shares

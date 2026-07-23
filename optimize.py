@@ -13,13 +13,15 @@ results = optimizer.optimize(
         "fast": [5, 10, 20],
         "slow": [30, 50, 100]
     },
-    sort_by="Return",      # Try "Sharpe", "Win Rate", "Profit Factor", "Drawdown"
-    ascending=False        # Use True for Drawdown
+    sort_by="Return",
+    ascending=False
 )
 
-print(results)
+print(results.best())
 
-results.to_csv(
-    "optimization_results.csv",
-    index=False
-)
+print()
+
+print("Top 5")
+print(results.head())
+
+results.export_csv()

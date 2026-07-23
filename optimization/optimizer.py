@@ -2,6 +2,7 @@ from itertools import product
 import pandas as pd
 
 from analytics.report import Report
+from research.results import ResearchResults
 
 
 class Optimizer:
@@ -71,4 +72,6 @@ class Optimizer:
             inplace=True
         )
 
-        return dataframe
+        return ResearchResults(
+            dataframe
+        )

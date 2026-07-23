@@ -1,7 +1,5 @@
 from bot.data import MarketData
-
 from backtesting.engine import BacktestEngine
-
 from risk.manager import RiskManager
 
 
@@ -10,16 +8,24 @@ class ResearchSession:
     def __init__(
         self,
         ticker="SPY",
-        risk_manager=None
+        risk_manager=None,
+        data=None
     ):
+        """
+        If data is provided, use it.
+        Otherwise download data for the ticker.
+        """
 
-        self.ticker = ticker
+        if data is None:
+            market = MarketData()
+            data = market.get_data(ticker)
 
-        market = MarketData()
+        self.data = data
 
-        df = market.get_data(ticker)
-
-        self.close = df["Close"][ticker]
+        if hasattr(data["Close"], "columns"):
+            self.close = data["Close"][ticker]
+        else:
+            self.close = data["Close"]
 
         self.engine = BacktestEngine(
             risk_manager=risk_manager or RiskManager()
@@ -31,9 +37,7 @@ class ResearchSession:
             self.close
         )
 
-        equity, trades = self.engine.run(
+        return self.engine.run(
             self.close,
             signals
         )
-
-        return equity, trades
