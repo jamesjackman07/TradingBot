@@ -1,5 +1,7 @@
 from bot.research import ResearchSession
 
+from risk.manager import RiskManager
+
 
 class WalkForwardTester:
 
@@ -8,13 +10,20 @@ class WalkForwardTester:
         data,
         train_size=504,
         test_size=126,
-        step_size=126
+        step_size=126,
+        risk_manager=None
     ):
+
         self.data = data
 
         self.train_size = train_size
         self.test_size = test_size
         self.step_size = step_size
+
+        self.risk_manager = (
+            risk_manager
+            or RiskManager()
+        )
 
         self._validate_settings()
 
@@ -36,8 +45,10 @@ class WalkForwardTester:
             )
 
         if len(self.data) < (
-            self.train_size + self.test_size
+            self.train_size
+            + self.test_size
         ):
+
             raise ValueError(
                 "Not enough data for one "
                 "walk-forward window"
@@ -50,13 +61,17 @@ class WalkForwardTester:
         while True:
 
             train_start = start
+
             train_end = (
-                train_start + self.train_size
+                train_start
+                + self.train_size
             )
 
             test_start = train_end
+
             test_end = (
-                test_start + self.test_size
+                test_start
+                + self.test_size
             )
 
             if test_end > len(self.data):
@@ -71,12 +86,24 @@ class WalkForwardTester:
             ].copy()
 
             yield {
-                "train_data": train_data,
-                "test_data": test_data,
-                "train_start": train_start,
-                "train_end": train_end,
-                "test_start": test_start,
-                "test_end": test_end
+
+                "train_data":
+                    train_data,
+
+                "test_data":
+                    test_data,
+
+                "train_start":
+                    train_start,
+
+                "train_end":
+                    train_end,
+
+                "test_start":
+                    test_start,
+
+                "test_end":
+                    test_end
             }
 
             start += self.step_size
@@ -87,7 +114,8 @@ class WalkForwardTester:
     ):
 
         return ResearchSession(
-            data=window["train_data"]
+            data=window["train_data"],
+            risk_manager=self.risk_manager
         )
 
     def create_test_session(
@@ -96,7 +124,8 @@ class WalkForwardTester:
     ):
 
         return ResearchSession(
-            data=window["test_data"]
+            data=window["test_data"],
+            risk_manager=self.risk_manager
         )
 
     def get_test_with_warmup(
@@ -107,11 +136,13 @@ class WalkForwardTester:
 
         warmup_start = max(
             0,
-            window["test_start"] - warmup_size
+            window["test_start"]
+            - warmup_size
         )
 
         warmup_test_data = self.data.iloc[
-            warmup_start:window["test_end"]
+            warmup_start:
+            window["test_end"]
         ].copy()
 
         return warmup_test_data

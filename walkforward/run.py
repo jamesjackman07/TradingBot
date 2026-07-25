@@ -16,14 +16,16 @@ class WalkForwardRunner:
         train_size=504,
         test_size=126,
         step_size=126,
-        initial_cash=10000
+        initial_cash=10000,
+        risk_manager=None
     ):
 
         self.tester = WalkForwardTester(
             data=data,
             train_size=train_size,
             test_size=test_size,
-            step_size=step_size
+            step_size=step_size,
+            risk_manager=risk_manager
         )
 
         self.initial_cash = initial_cash
