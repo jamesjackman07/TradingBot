@@ -1,3 +1,5 @@
+import pandas as pd
+
 from optimization.optimizer import Optimizer
 from bot.strategies.sma_cross import SMACrossoverStrategy
 from bot.research import ResearchSession
@@ -14,7 +16,8 @@ class WalkForwardRunner:
         data,
         train_size=504,
         test_size=126,
-        step_size=126
+        step_size=126,
+        initial_cash=10000
     ):
 
         self.tester = WalkForwardTester(
@@ -24,12 +27,18 @@ class WalkForwardRunner:
             step_size=step_size
         )
 
+        self.initial_cash = initial_cash
+
     def run(
         self,
         parameters
     ):
 
         window_results = []
+
+        combined_equity_parts = []
+
+        current_cash = self.initial_cash
 
         for window_number, window in enumerate(
             self.tester.windows(),
@@ -80,9 +89,6 @@ class WalkForwardRunner:
             # 4. Prepare indicator warm-up
             # --------------------------------
 
-            # Add one extra bar so strategies that
-            # compare the current and previous SMA
-            # values also have enough history.
             warmup_size = slow + 1
 
             warmup_data = (
@@ -96,8 +102,6 @@ class WalkForwardRunner:
                 data=warmup_data
             )
 
-            # Generate indicators/signals using
-            # historical warm-up data plus test data.
             all_signals = strategy.generate_signals(
                 warmup_session.close
             )
@@ -116,14 +120,22 @@ class WalkForwardRunner:
                 test_session.close
             )
 
-            # Keep ONLY signals belonging to the
-            # actual out-of-sample test period.
             test_signals = all_signals[
                 -test_length:
             ]
 
             # --------------------------------
-            # 6. Backtest test period only
+            # 6. Carry OOS capital forward
+            # --------------------------------
+
+            window_start_cash = current_cash
+
+            test_session.engine.initial_cash = (
+                window_start_cash
+            )
+
+            # --------------------------------
+            # 7. Backtest test period only
             # --------------------------------
 
             equity, trades = (
@@ -138,8 +150,26 @@ class WalkForwardRunner:
                 trades
             )
 
+            current_cash = float(
+                equity.iloc[-1]
+            )
+
             # --------------------------------
-            # 7. Store window information
+            # 8. Add dates to equity curve
+            # --------------------------------
+
+            dated_equity = equity.copy()
+
+            dated_equity.index = (
+                test_session.close.index
+            )
+
+            combined_equity_parts.append(
+                dated_equity
+            )
+
+            # --------------------------------
+            # 9. Store window information
             # --------------------------------
 
             train_data = window["train_data"]
@@ -159,6 +189,14 @@ class WalkForwardRunner:
                 "slow": slow,
 
                 "warmup_bars": warmup_size,
+
+                "starting_capital": (
+                    window_start_cash
+                ),
+
+                "ending_capital": (
+                    current_cash
+                ),
 
                 "training_return": best["Return"],
                 "training_sharpe": best["Sharpe"],
@@ -184,4 +222,23 @@ class WalkForwardRunner:
                 ]
             })
 
-        return window_results
+        # --------------------------------
+        # 10. Build continuous OOS equity
+        # --------------------------------
+
+        if combined_equity_parts:
+
+            combined_equity = pd.concat(
+                combined_equity_parts
+            )
+
+            combined_equity.name = "Equity"
+
+        else:
+
+            combined_equity = pd.Series(
+                dtype=float,
+                name="Equity"
+            )
+
+        return window_results, combined_equity

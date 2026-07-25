@@ -1,5 +1,9 @@
 from bot.data import MarketData
+
 from walkforward.run import WalkForwardRunner
+
+from backtesting.metrics import Metrics
+from analytics.plots import Plots
 
 
 # --------------------------------
@@ -22,7 +26,8 @@ runner = WalkForwardRunner(
     data=data,
     train_size=504,
     test_size=126,
-    step_size=126
+    step_size=126,
+    initial_cash=10000
 )
 
 
@@ -40,13 +45,13 @@ parameters = {
 # Run rolling walk-forward analysis
 # --------------------------------
 
-results = runner.run(
+results, combined_equity = runner.run(
     parameters=parameters
 )
 
 
 # --------------------------------
-# Print report
+# Print individual windows
 # --------------------------------
 
 print()
@@ -117,6 +122,16 @@ for result in results:
     print("Testing / Out-of-Sample")
 
     print(
+        f"  Start Capital: "
+        f"${result['starting_capital']:,.2f}"
+    )
+
+    print(
+        f"  End Capital  : "
+        f"${result['ending_capital']:,.2f}"
+    )
+
+    print(
         f"  Return       : "
         f"{result['testing_return']:.2f}%"
     )
@@ -138,68 +153,113 @@ for result in results:
 
 
 # --------------------------------
-# Aggregate statistics
+# Combined OOS statistics
 # --------------------------------
 
-if results:
+if not combined_equity.empty:
 
-    testing_returns = [
-        result["testing_return"]
-        for result in results
-    ]
+    initial_capital = runner.initial_cash
 
-    testing_sharpes = [
-        result["testing_sharpe"]
-        for result in results
-    ]
-
-    testing_drawdowns = [
-        result["testing_drawdown"]
-        for result in results
-    ]
-
-    testing_trades = [
-        result["testing_trades"]
-        for result in results
-    ]
-
-    profitable_windows = sum(
-        value > 0
-        for value in testing_returns
+    final_capital = float(
+        combined_equity.iloc[-1]
     )
 
-    losing_windows = sum(
-        value < 0
-        for value in testing_returns
+    combined_return = Metrics.total_return(
+        initial_capital,
+        final_capital
     )
 
-    flat_windows = sum(
-        value == 0
-        for value in testing_returns
+    combined_cagr = Metrics.cagr(
+        initial_capital,
+        final_capital,
+        len(combined_equity)
     )
 
-    average_return = (
-        sum(testing_returns)
-        / len(testing_returns)
+    combined_volatility = Metrics.volatility(
+        combined_equity
     )
 
-    average_sharpe = (
-        sum(testing_sharpes)
-        / len(testing_sharpes)
+    combined_sharpe = Metrics.sharpe_ratio(
+        combined_equity
     )
 
-    worst_drawdown = max(
-        testing_drawdowns
+    combined_sortino = Metrics.sortino_ratio(
+        combined_equity
+    )
+
+    combined_drawdown = Metrics.max_drawdown(
+        combined_equity
     )
 
     total_trades = sum(
-        testing_trades
+        result["testing_trades"]
+        for result in results
+    )
+
+    profitable_windows = sum(
+        result["testing_return"] > 0
+        for result in results
+    )
+
+    losing_windows = sum(
+        result["testing_return"] < 0
+        for result in results
+    )
+
+    flat_windows = sum(
+        result["testing_return"] == 0
+        for result in results
     )
 
     print()
     print("=" * 60)
-    print("OUT-OF-SAMPLE SUMMARY")
+    print("COMBINED OUT-OF-SAMPLE PERFORMANCE")
     print("=" * 60)
+
+    print()
+    print(
+        f"Initial Capital     : "
+        f"${initial_capital:,.2f}"
+    )
+
+    print(
+        f"Final Capital       : "
+        f"${final_capital:,.2f}"
+    )
+
+    print()
+
+    print(
+        f"Combined OOS Return : "
+        f"{combined_return:.2f}%"
+    )
+
+    print(
+        f"OOS CAGR            : "
+        f"{combined_cagr:.2f}%"
+    )
+
+    print(
+        f"OOS Volatility      : "
+        f"{combined_volatility:.2f}%"
+    )
+
+    print(
+        f"OOS Sharpe Ratio    : "
+        f"{combined_sharpe:.2f}"
+    )
+
+    print(
+        f"OOS Sortino Ratio   : "
+        f"{combined_sortino:.2f}"
+    )
+
+    print(
+        f"OOS Max Drawdown    : "
+        f"{combined_drawdown:.2f}%"
+    )
+
+    print()
 
     print(
         f"Windows             : "
@@ -221,27 +281,21 @@ if results:
         f"{flat_windows}"
     )
 
-    print()
-
-    print(
-        f"Average OOS Return  : "
-        f"{average_return:.2f}%"
-    )
-
-    print(
-        f"Average OOS Sharpe  : "
-        f"{average_sharpe:.2f}"
-    )
-
-    print(
-        f"Worst OOS Drawdown  : "
-        f"{worst_drawdown:.2f}%"
-    )
-
     print(
         f"Total OOS Trades    : "
         f"{total_trades}"
     )
 
-print()
-print("=" * 60)
+    print()
+    print("=" * 60)
+
+
+# --------------------------------
+# Plot combined OOS equity curve
+# --------------------------------
+
+if not combined_equity.empty:
+
+    Plots.equity_curve(
+        combined_equity
+    )
