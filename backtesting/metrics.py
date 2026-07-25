@@ -149,8 +149,13 @@ class Metrics:
             if trade.profit < 0
         ))
 
-        if gross_loss == 0:
+        # No trades or no profit
+        if gross_profit == 0:
             return 0.0
+
+        # Profitable trades with no losses
+        if gross_loss == 0:
+            return float("inf")
 
         return gross_profit / gross_loss
 
