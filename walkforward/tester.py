@@ -81,17 +81,37 @@ class WalkForwardTester:
 
             start += self.step_size
 
-    def create_sessions(
+    def create_train_session(
         self,
         window
     ):
 
-        train_session = ResearchSession(
+        return ResearchSession(
             data=window["train_data"]
         )
 
-        test_session = ResearchSession(
+    def create_test_session(
+        self,
+        window
+    ):
+
+        return ResearchSession(
             data=window["test_data"]
         )
 
-        return train_session, test_session
+    def get_test_with_warmup(
+        self,
+        window,
+        warmup_size
+    ):
+
+        warmup_start = max(
+            0,
+            window["test_start"] - warmup_size
+        )
+
+        warmup_test_data = self.data.iloc[
+            warmup_start:window["test_end"]
+        ].copy()
+
+        return warmup_test_data

@@ -1,5 +1,6 @@
 from optimization.optimizer import Optimizer
 from bot.strategies.sma_cross import SMACrossoverStrategy
+from bot.research import ResearchSession
 
 from analytics.report import Report
 
@@ -35,14 +36,18 @@ class WalkForwardRunner:
             start=1
         ):
 
-            train_session, test_session = (
-                self.tester.create_sessions(
+            # --------------------------------
+            # 1. Create training session
+            # --------------------------------
+
+            train_session = (
+                self.tester.create_train_session(
                     window
                 )
             )
 
             # --------------------------------
-            # 1. Optimise on training data
+            # 2. Optimise on training data only
             # --------------------------------
 
             optimizer = Optimizer(
@@ -63,7 +68,7 @@ class WalkForwardRunner:
             slow = int(best["slow"])
 
             # --------------------------------
-            # 2. Freeze best parameters
+            # 3. Freeze best parameters
             # --------------------------------
 
             strategy = SMACrossoverStrategy(
@@ -72,11 +77,60 @@ class WalkForwardRunner:
             )
 
             # --------------------------------
-            # 3. Run on unseen test data
+            # 4. Prepare indicator warm-up
             # --------------------------------
 
-            equity, trades = test_session.run(
-                strategy
+            # Add one extra bar so strategies that
+            # compare the current and previous SMA
+            # values also have enough history.
+            warmup_size = slow + 1
+
+            warmup_data = (
+                self.tester.get_test_with_warmup(
+                    window,
+                    warmup_size
+                )
+            )
+
+            warmup_session = ResearchSession(
+                data=warmup_data
+            )
+
+            # Generate indicators/signals using
+            # historical warm-up data plus test data.
+            all_signals = strategy.generate_signals(
+                warmup_session.close
+            )
+
+            # --------------------------------
+            # 5. Create true test session
+            # --------------------------------
+
+            test_session = (
+                self.tester.create_test_session(
+                    window
+                )
+            )
+
+            test_length = len(
+                test_session.close
+            )
+
+            # Keep ONLY signals belonging to the
+            # actual out-of-sample test period.
+            test_signals = all_signals[
+                -test_length:
+            ]
+
+            # --------------------------------
+            # 6. Backtest test period only
+            # --------------------------------
+
+            equity, trades = (
+                test_session.engine.run(
+                    test_session.close,
+                    test_signals
+                )
             )
 
             test_summary = Report.summary(
@@ -85,7 +139,7 @@ class WalkForwardRunner:
             )
 
             # --------------------------------
-            # 4. Store window information
+            # 7. Store window information
             # --------------------------------
 
             train_data = window["train_data"]
@@ -103,6 +157,8 @@ class WalkForwardRunner:
 
                 "fast": fast,
                 "slow": slow,
+
+                "warmup_bars": warmup_size,
 
                 "training_return": best["Return"],
                 "training_sharpe": best["Sharpe"],
