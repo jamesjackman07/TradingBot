@@ -1,7 +1,6 @@
 import pandas as pd
 
 from optimization.optimizer import Optimizer
-from bot.strategies.sma_cross import SMACrossoverStrategy
 from bot.research import ResearchSession
 
 from analytics.report import Report
@@ -31,6 +30,7 @@ class WalkForwardRunner:
 
     def run(
         self,
+        strategy_class,
         parameters
     ):
 
@@ -39,6 +39,16 @@ class WalkForwardRunner:
         combined_equity_parts = []
 
         current_cash = self.initial_cash
+
+        # --------------------------------
+        # Strategy-specific constraint
+        # --------------------------------
+
+        constraint = getattr(
+            strategy_class,
+            "parameter_constraint",
+            None
+        )
 
         for window_number, window in enumerate(
             self.tester.windows(),
@@ -56,7 +66,7 @@ class WalkForwardRunner:
             )
 
             # --------------------------------
-            # 2. Optimise on training data only
+            # 2. Optimise training data
             # --------------------------------
 
             optimizer = Optimizer(
@@ -64,32 +74,76 @@ class WalkForwardRunner:
             )
 
             results = optimizer.optimize(
-                strategy_class=SMACrossoverStrategy,
+                strategy_class=strategy_class,
                 parameters=parameters,
-                constraint=lambda p: (
-                    p["fast"] < p["slow"]
-                )
+                constraint=constraint
             )
 
             best = results.dataframe.iloc[0]
 
-            fast = int(best["fast"])
-            slow = int(best["slow"])
-
             # --------------------------------
-            # 3. Freeze best parameters
+            # 3. Extract selected parameters
             # --------------------------------
 
-            strategy = SMACrossoverStrategy(
-                fast=fast,
-                slow=slow
+            selected_parameters = {}
+
+            for name in parameters:
+
+                value = best[name]
+
+                try:
+
+                    numeric_value = float(value)
+
+                    if numeric_value.is_integer():
+
+                        value = int(
+                            numeric_value
+                        )
+
+                    else:
+
+                        value = numeric_value
+
+                except (
+                    TypeError,
+                    ValueError
+                ):
+
+                    pass
+
+                selected_parameters[
+                    name
+                ] = value
+
+            # --------------------------------
+            # 4. Freeze selected strategy
+            # --------------------------------
+
+            strategy = strategy_class(
+                **selected_parameters
             )
 
             # --------------------------------
-            # 4. Prepare indicator warm-up
+            # 5. Determine warm-up
             # --------------------------------
 
-            warmup_size = slow + 1
+            if hasattr(
+                strategy,
+                "warmup_period"
+            ):
+
+                warmup_size = int(
+                    strategy.warmup_period()
+                )
+
+            else:
+
+                warmup_size = 0
+
+            # --------------------------------
+            # 6. Prepare warm-up data
+            # --------------------------------
 
             warmup_data = (
                 self.tester.get_test_with_warmup(
@@ -102,12 +156,14 @@ class WalkForwardRunner:
                 data=warmup_data
             )
 
-            all_signals = strategy.generate_signals(
-                warmup_session.close
+            all_signals = (
+                strategy.generate_signals(
+                    warmup_session.close
+                )
             )
 
             # --------------------------------
-            # 5. Create true test session
+            # 7. Create true test session
             # --------------------------------
 
             test_session = (
@@ -125,17 +181,19 @@ class WalkForwardRunner:
             ]
 
             # --------------------------------
-            # 6. Carry OOS capital forward
+            # 8. Carry capital forward
             # --------------------------------
 
-            window_start_cash = current_cash
+            window_start_cash = (
+                current_cash
+            )
 
             test_session.engine.initial_cash = (
                 window_start_cash
             )
 
             # --------------------------------
-            # 7. Backtest test period only
+            # 9. Run OOS backtest
             # --------------------------------
 
             equity, trades = (
@@ -155,7 +213,7 @@ class WalkForwardRunner:
             )
 
             # --------------------------------
-            # 8. Add dates to equity curve
+            # 10. Date the equity curve
             # --------------------------------
 
             dated_equity = equity.copy()
@@ -169,61 +227,82 @@ class WalkForwardRunner:
             )
 
             # --------------------------------
-            # 9. Store window information
+            # 11. Store window result
             # --------------------------------
 
-            train_data = window["train_data"]
-            test_data = window["test_data"]
+            train_data = window[
+                "train_data"
+            ]
 
-            window_results.append({
+            test_data = window[
+                "test_data"
+            ]
+
+            window_result = {
 
                 "window": window_number,
 
-                "train_start": train_data.index[0],
-                "train_end": train_data.index[-1],
+                "train_start":
+                    train_data.index[0],
 
-                "test_start": test_data.index[0],
-                "test_end": test_data.index[-1],
+                "train_end":
+                    train_data.index[-1],
 
-                "fast": fast,
-                "slow": slow,
+                "test_start":
+                    test_data.index[0],
 
-                "warmup_bars": warmup_size,
+                "test_end":
+                    test_data.index[-1],
 
-                "starting_capital": (
-                    window_start_cash
-                ),
+                "parameters":
+                    selected_parameters,
 
-                "ending_capital": (
-                    current_cash
-                ),
+                "warmup_bars":
+                    warmup_size,
 
-                "training_return": best["Return"],
-                "training_sharpe": best["Sharpe"],
-                "training_drawdown": best["Drawdown"],
-                "training_trades": int(
-                    best["Trades"]
-                ),
+                "starting_capital":
+                    window_start_cash,
 
-                "testing_return": test_summary[
-                    "return"
-                ],
+                "ending_capital":
+                    current_cash,
 
-                "testing_sharpe": test_summary[
-                    "sharpe"
-                ],
+                "training_return":
+                    best["Return"],
 
-                "testing_drawdown": test_summary[
-                    "drawdown"
-                ],
+                "training_sharpe":
+                    best["Sharpe"],
 
-                "testing_trades": test_summary[
-                    "trades"
-                ]
-            })
+                "training_drawdown":
+                    best["Drawdown"],
+
+                "training_trades":
+                    int(best["Trades"]),
+
+                "testing_return":
+                    test_summary["return"],
+
+                "testing_sharpe":
+                    test_summary["sharpe"],
+
+                "testing_drawdown":
+                    test_summary["drawdown"],
+
+                "testing_trades":
+                    test_summary["trades"]
+            }
+
+            # Keep parameter names available
+            # directly in the result as well.
+            window_result.update(
+                selected_parameters
+            )
+
+            window_results.append(
+                window_result
+            )
 
         # --------------------------------
-        # 10. Build continuous OOS equity
+        # 12. Combined OOS equity
         # --------------------------------
 
         if combined_equity_parts:
@@ -232,7 +311,9 @@ class WalkForwardRunner:
                 combined_equity_parts
             )
 
-            combined_equity.name = "Equity"
+            combined_equity.name = (
+                "Equity"
+            )
 
         else:
 
@@ -241,4 +322,7 @@ class WalkForwardRunner:
                 name="Equity"
             )
 
-        return window_results, combined_equity
+        return (
+            window_results,
+            combined_equity
+        )

@@ -4,15 +4,44 @@ from bot.indicators import Indicators
 
 class SMACrossoverStrategy(Strategy):
 
-    def __init__(self, fast=20, slow=50):
+    def __init__(
+        self,
+        fast=20,
+        slow=50
+    ):
 
         self.fast = fast
         self.slow = slow
 
-    def generate_signals(self, close):
+    @staticmethod
+    def parameter_constraint(parameters):
 
-        fast_sma = Indicators.sma(close, self.fast)
-        slow_sma = Indicators.sma(close, self.slow)
+        return (
+            parameters["fast"]
+            < parameters["slow"]
+        )
+
+    def warmup_period(self):
+
+        # We need the slow SMA plus one
+        # previous observation to detect
+        # a crossover correctly.
+        return self.slow + 1
+
+    def generate_signals(
+        self,
+        close
+    ):
+
+        fast_sma = Indicators.sma(
+            close,
+            self.fast
+        )
+
+        slow_sma = Indicators.sma(
+            close,
+            self.slow
+        )
 
         signals = []
 
@@ -22,25 +51,38 @@ class SMACrossoverStrategy(Strategy):
                 signals.append("HOLD")
                 continue
 
-            previous_fast = fast_sma.iloc[i - 1]
-            previous_slow = slow_sma.iloc[i - 1]
+            previous_fast = (
+                fast_sma.iloc[i - 1]
+            )
 
-            current_fast = fast_sma.iloc[i]
-            current_slow = slow_sma.iloc[i]
+            previous_slow = (
+                slow_sma.iloc[i - 1]
+            )
+
+            current_fast = (
+                fast_sma.iloc[i]
+            )
+
+            current_slow = (
+                slow_sma.iloc[i]
+            )
 
             if (
                 previous_fast <= previous_slow
                 and current_fast > current_slow
             ):
+
                 signals.append("BUY")
 
             elif (
                 previous_fast >= previous_slow
                 and current_fast < current_slow
             ):
+
                 signals.append("SELL")
 
             else:
+
                 signals.append("HOLD")
 
         return signals

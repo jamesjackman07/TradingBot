@@ -1,4 +1,5 @@
 from bot.data import MarketData
+from bot.strategies.sma_cross import SMACrossoverStrategy
 
 from walkforward.run import WalkForwardRunner
 
@@ -32,7 +33,7 @@ runner = WalkForwardRunner(
 
 
 # --------------------------------
-# Parameter grid
+# SMA parameter grid
 # --------------------------------
 
 parameters = {
@@ -46,6 +47,7 @@ parameters = {
 # --------------------------------
 
 results, combined_equity = runner.run(
+    strategy_class=SMACrossoverStrategy,
     parameters=parameters
 )
 
@@ -87,13 +89,13 @@ for result in results:
     print()
     print("Selected Parameters")
 
-    print(
-        f"  Fast SMA : {result['fast']}"
-    )
+    for name, value in result[
+        "parameters"
+    ].items():
 
-    print(
-        f"  Slow SMA : {result['slow']}"
-    )
+        print(
+            f"  {name}: {value}"
+        )
 
     print()
     print("Training / In-Sample")
@@ -297,7 +299,7 @@ if not combined_equity.empty:
 
 if not combined_equity.empty:
 
-    # Use the exact same dates as the
+    # Use exactly the same dates as the
     # walk-forward out-of-sample period.
     benchmark_prices = data.loc[
         combined_equity.index,
@@ -326,7 +328,7 @@ if not combined_equity.empty:
     )
 
     # --------------------------------
-    # Build benchmark equity curve
+    # Build buy-and-hold equity curve
     # --------------------------------
 
     benchmark_equity = (
