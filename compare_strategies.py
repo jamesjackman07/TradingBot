@@ -1,3 +1,5 @@
+import pandas as pd
+
 from bot.data import MarketData
 
 from bot.strategies.sma_cross import (
@@ -90,11 +92,14 @@ strategies = {
     }
 }
 
+
 # --------------------------------
 # Run each strategy
 # --------------------------------
 
 comparison = []
+
+equity_curves = {}
 
 
 for name, config in strategies.items():
@@ -126,6 +131,14 @@ for name, config in strategies.items():
         )
 
         continue
+
+    # --------------------------------
+    # Store OOS equity curve
+    # --------------------------------
+
+    equity_curves[name] = (
+        equity.copy()
+    )
 
     # --------------------------------
     # Performance metrics
@@ -186,21 +199,29 @@ for name, config in strategies.items():
 
         "Strategy": name,
 
-        "Final Capital": final_capital,
+        "Final Capital":
+            final_capital,
 
-        "Return": total_return,
+        "Return":
+            total_return,
 
-        "CAGR": cagr,
+        "CAGR":
+            cagr,
 
-        "Volatility": volatility,
+        "Volatility":
+            volatility,
 
-        "Sharpe": sharpe,
+        "Sharpe":
+            sharpe,
 
-        "Sortino": sortino,
+        "Sortino":
+            sortino,
 
-        "Max Drawdown": drawdown,
+        "Max Drawdown":
+            drawdown,
 
-        "Trades": trades,
+        "Trades":
+            trades,
 
         "Profitable Windows":
             profitable_windows,
@@ -217,28 +238,20 @@ for name, config in strategies.items():
 # Buy-and-hold benchmark
 # --------------------------------
 
-if comparison:
+if equity_curves:
 
-    first_test_date = data.index[
-        TRAIN_SIZE
-    ]
-
-    number_of_windows = (
-        len(data) - TRAIN_SIZE - TEST_SIZE
-    ) // STEP_SIZE + 1
-
-    oos_length = (
-        number_of_windows
-        * TEST_SIZE
+    # Use exactly the same dates as
+    # the strategy OOS equity curves.
+    reference_equity = next(
+        iter(equity_curves.values())
     )
 
     benchmark_prices = data.loc[
-        first_test_date:
-    ]["Close"].iloc[
-        :oos_length
+        reference_equity.index,
+        "Close"
     ]
 
-    # yfinance may return a
+    # yfinance may return Close as a
     # one-column DataFrame.
     if hasattr(
         benchmark_prices,
@@ -263,6 +276,10 @@ if comparison:
         benchmark_prices
         / benchmark_prices.iloc[0]
         * INITIAL_CAPITAL
+    )
+
+    benchmark_equity.name = (
+        "Buy & Hold"
     )
 
     benchmark_final = float(
@@ -318,6 +335,12 @@ if comparison:
         "Flat Windows": 0
     })
 
+    # Keep benchmark so it can also
+    # appear in correlation analysis.
+    equity_curves[
+        "Buy & Hold"
+    ] = benchmark_equity
+
 
 # --------------------------------
 # Print comparison table
@@ -362,3 +385,48 @@ for result in comparison:
 
 print()
 print("=" * 110)
+
+
+# --------------------------------
+# Correlation analysis
+# --------------------------------
+
+if equity_curves:
+
+    # Combine all equity curves by date.
+    equity_dataframe = pd.concat(
+        equity_curves,
+        axis=1
+    )
+
+    # Convert equity levels into daily
+    # percentage returns.
+    daily_returns = (
+        equity_dataframe
+        .pct_change(
+            fill_method=None
+        )
+        .dropna()
+    )
+
+    # Correlation must be calculated
+    # from returns, not equity levels.
+    correlation = (
+        daily_returns.corr()
+    )
+
+    print()
+    print("=" * 80)
+    print(
+        "DAILY OOS RETURN CORRELATION"
+    )
+    print("=" * 80)
+
+    print()
+
+    print(
+        correlation.round(3)
+    )
+
+    print()
+    print("=" * 80)
