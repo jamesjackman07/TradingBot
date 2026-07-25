@@ -135,7 +135,6 @@ class BacktestEngine:
 
                 portfolio.sell(
                     sell_price,
-                    shares,
                     self.risk.commission
                 )
 

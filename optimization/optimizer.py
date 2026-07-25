@@ -1,4 +1,5 @@
 from itertools import product
+
 import pandas as pd
 
 from analytics.report import Report
@@ -15,7 +16,8 @@ class Optimizer:
         strategy_class,
         parameters,
         sort_by="Return",
-        ascending=False
+        ascending=False,
+        constraint=None
     ):
 
         parameter_names = list(parameters.keys())
@@ -25,12 +27,18 @@ class Optimizer:
 
         for values in product(*parameter_values):
 
-            strategy_parameters = dict(
+            current_parameters = dict(
                 zip(parameter_names, values)
             )
 
+            if (
+                constraint is not None
+                and not constraint(current_parameters)
+            ):
+                continue
+
             strategy = strategy_class(
-                **strategy_parameters
+                **current_parameters
             )
 
             equity, trades = self.session.run(
@@ -42,36 +50,29 @@ class Optimizer:
                 trades
             )
 
-            result = strategy_parameters.copy()
+            results.append({
 
-            result["Return"] = summary["return"]
-            result["Sharpe"] = summary["sharpe"]
-            result["Drawdown"] = summary["drawdown"]
-            result["Profit Factor"] = summary["profit_factor"]
-            result["Win Rate"] = summary["win_rate"]
-            result["Trades"] = summary["trades"]
+                **current_parameters,
 
-            results.append(result)
+                "Return": summary["return"],
+                "Sharpe": summary["sharpe"],
+                "Drawdown": summary["drawdown"],
+                "Profit Factor": summary["profit_factor"],
+                "Win Rate": summary["win_rate"],
+                "Trades": summary["trades"]
+
+            })
 
         dataframe = pd.DataFrame(results)
 
         if sort_by not in dataframe.columns:
             raise ValueError(
-                f"Unknown metric '{sort_by}'. "
-                f"Available metrics: {list(dataframe.columns)}"
+                f"Unknown metric '{sort_by}'"
             )
 
-        dataframe.sort_values(
+        dataframe = dataframe.sort_values(
             by=sort_by,
-            ascending=ascending,
-            inplace=True
-        )
+            ascending=ascending
+        ).reset_index(drop=True)
 
-        dataframe.reset_index(
-            drop=True,
-            inplace=True
-        )
-
-        return ResearchResults(
-            dataframe
-        )
+        return ResearchResults(dataframe)
