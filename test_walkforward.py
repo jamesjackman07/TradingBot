@@ -14,7 +14,7 @@ market = MarketData()
 
 data = market.get_data(
     "SPY",
-    period="5y"
+    period="15y"
 )
 
 
@@ -217,6 +217,7 @@ if not combined_equity.empty:
     print("=" * 60)
 
     print()
+
     print(
         f"Initial Capital     : "
         f"${initial_capital:,.2f}"
@@ -288,6 +289,166 @@ if not combined_equity.empty:
 
     print()
     print("=" * 60)
+
+
+# --------------------------------
+# Buy-and-hold benchmark
+# --------------------------------
+
+if not combined_equity.empty:
+
+    # Use the exact same dates as the
+    # walk-forward out-of-sample period.
+    benchmark_prices = data.loc[
+        combined_equity.index,
+        "Close"
+    ]
+
+    # yfinance may return Close as a
+    # one-column DataFrame.
+    if hasattr(
+        benchmark_prices,
+        "columns"
+    ):
+
+        if len(
+            benchmark_prices.columns
+        ) == 1:
+
+            benchmark_prices = (
+                benchmark_prices.iloc[:, 0]
+            )
+
+    benchmark_prices = (
+        benchmark_prices
+        .dropna()
+        .astype(float)
+    )
+
+    # --------------------------------
+    # Build benchmark equity curve
+    # --------------------------------
+
+    benchmark_equity = (
+        benchmark_prices
+        / benchmark_prices.iloc[0]
+        * runner.initial_cash
+    )
+
+    benchmark_equity.name = (
+        "Buy & Hold"
+    )
+
+    # --------------------------------
+    # Benchmark metrics
+    # --------------------------------
+
+    benchmark_final = float(
+        benchmark_equity.iloc[-1]
+    )
+
+    benchmark_return = (
+        Metrics.total_return(
+            runner.initial_cash,
+            benchmark_final
+        )
+    )
+
+    benchmark_cagr = Metrics.cagr(
+        runner.initial_cash,
+        benchmark_final,
+        len(benchmark_equity)
+    )
+
+    benchmark_volatility = (
+        Metrics.volatility(
+            benchmark_equity
+        )
+    )
+
+    benchmark_sharpe = (
+        Metrics.sharpe_ratio(
+            benchmark_equity
+        )
+    )
+
+    benchmark_sortino = (
+        Metrics.sortino_ratio(
+            benchmark_equity
+        )
+    )
+
+    benchmark_drawdown = (
+        Metrics.max_drawdown(
+            benchmark_equity
+        )
+    )
+
+    # --------------------------------
+    # Print comparison
+    # --------------------------------
+
+    print()
+    print("=" * 70)
+    print(
+        "STRATEGY VS BUY-AND-HOLD"
+    )
+    print("=" * 70)
+
+    print()
+
+    print(
+        f"{'Metric':<22}"
+        f"{'Strategy':>18}"
+        f"{'Buy & Hold':>18}"
+    )
+
+    print("-" * 58)
+
+    print(
+        f"{'Final Capital':<22}"
+        f"${final_capital:>17,.2f}"
+        f"${benchmark_final:>17,.2f}"
+    )
+
+    print(
+        f"{'Total Return':<22}"
+        f"{combined_return:>17.2f}%"
+        f"{benchmark_return:>17.2f}%"
+    )
+
+    print(
+        f"{'CAGR':<22}"
+        f"{combined_cagr:>17.2f}%"
+        f"{benchmark_cagr:>17.2f}%"
+    )
+
+    print(
+        f"{'Volatility':<22}"
+        f"{combined_volatility:>17.2f}%"
+        f"{benchmark_volatility:>17.2f}%"
+    )
+
+    print(
+        f"{'Sharpe Ratio':<22}"
+        f"{combined_sharpe:>18.2f}"
+        f"{benchmark_sharpe:>18.2f}"
+    )
+
+    print(
+        f"{'Sortino Ratio':<22}"
+        f"{combined_sortino:>18.2f}"
+        f"{benchmark_sortino:>18.2f}"
+    )
+
+    print(
+        f"{'Max Drawdown':<22}"
+        f"{combined_drawdown:>17.2f}%"
+        f"{benchmark_drawdown:>17.2f}%"
+    )
+
+    print()
+    print("=" * 70)
 
 
 # --------------------------------
