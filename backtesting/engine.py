@@ -24,26 +24,43 @@ class BacktestEngine:
     ):
 
         # --------------------------------
-        # Support both legacy Close Series
-        # and new OHLC DataFrame input.
+        # Market data
         # --------------------------------
 
-        if isinstance(
+        has_ohlc = isinstance(
             data,
             pd.DataFrame
-        ):
+        )
+
+        if has_ohlc:
 
             close_prices = data["Close"]
 
-            if "Open" in data.columns:
-                open_prices = data["Open"]
-            else:
-                open_prices = close_prices
+            open_prices = (
+                data["Open"]
+                if "Open" in data.columns
+                else close_prices
+            )
+
+            high_prices = (
+                data["High"]
+                if "High" in data.columns
+                else close_prices
+            )
+
+            low_prices = (
+                data["Low"]
+                if "Low" in data.columns
+                else close_prices
+            )
 
         else:
 
-            close_prices = data
+            # Legacy close-only support.
             open_prices = data
+            high_prices = data
+            low_prices = data
+            close_prices = data
 
         portfolio = Portfolio(
             self.initial_cash
@@ -53,9 +70,6 @@ class BacktestEngine:
         trades = []
 
         entry_price = None
-
-        # Signal generated on bar i - 1
-        # is executed on bar i.
         pending_signal = None
 
         for i in range(
@@ -64,6 +78,14 @@ class BacktestEngine:
 
             open_price = float(
                 open_prices.iloc[i]
+            )
+
+            high_price = float(
+                high_prices.iloc[i]
+            )
+
+            low_price = float(
+                low_prices.iloc[i]
             )
 
             close_price = float(
@@ -140,11 +162,6 @@ class BacktestEngine:
             # =================================
             # 2. Stop-loss / take-profit
             # =================================
-            #
-            # Still close-price based for now.
-            # We will replace this with OHLC
-            # intrabar handling separately.
-            # =================================
 
             if portfolio.has_position():
 
@@ -160,30 +177,71 @@ class BacktestEngine:
                     )
                 )
 
-                exit_trade = False
+                exit_price = None
                 exit_reason = None
 
+                # -----------------------------
+                # Stop-loss
+                # -----------------------------
+                #
+                # Stop is deliberately checked
+                # first. If both stop and target
+                # occur inside one OHLC bar, we
+                # use the conservative outcome.
+                # -----------------------------
+
+                if stop_price is not None:
+
+                    # Market gapped below stop.
+                    if open_price <= stop_price:
+
+                        exit_price = open_price
+                        exit_reason = (
+                            "STOP_LOSS"
+                        )
+
+                    # Stop touched intrabar.
+                    elif low_price <= stop_price:
+
+                        exit_price = stop_price
+                        exit_reason = (
+                            "STOP_LOSS"
+                        )
+
+                # -----------------------------
+                # Take-profit
+                # -----------------------------
+
                 if (
-                    stop_price is not None
-                    and close_price <= stop_price
+                    exit_reason is None
+                    and target_price is not None
                 ):
 
-                    exit_trade = True
-                    exit_reason = "STOP_LOSS"
+                    # Market gapped above target.
+                    if open_price >= target_price:
 
-                elif (
-                    target_price is not None
-                    and close_price >= target_price
-                ):
+                        exit_price = open_price
+                        exit_reason = (
+                            "TAKE_PROFIT"
+                        )
 
-                    exit_trade = True
-                    exit_reason = "TAKE_PROFIT"
+                    # Target touched intrabar.
+                    elif high_price >= target_price:
 
-                if exit_trade:
+                        exit_price = target_price
+                        exit_reason = (
+                            "TAKE_PROFIT"
+                        )
+
+                # -----------------------------
+                # Execute protective exit
+                # -----------------------------
+
+                if exit_reason is not None:
 
                     sell_price = (
                         self.risk.sell_price(
-                            close_price
+                            exit_price
                         )
                     )
 
@@ -217,15 +275,13 @@ class BacktestEngine:
             )
 
             # =================================
-            # 4. Signal becomes actionable only
-            #    on the NEXT bar
+            # 4. Store current signal
             # =================================
 
             pending_signal = signals[i]
 
         # =====================================
-        # Close any remaining open position
-        # at the final available close.
+        # 5. End-of-data liquidation
         # =====================================
 
         if portfolio.has_position():
@@ -249,9 +305,9 @@ class BacktestEngine:
                 Trade(
                     trade_type="SELL",
                     price=final_price,
-                    index=len(
-                        close_prices
-                    ) - 1,
+                    index=(
+                        len(close_prices) - 1
+                    ),
                     shares=shares,
                     reason="END_OF_DATA"
                 )
