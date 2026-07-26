@@ -17,32 +17,147 @@ class BacktestEngine:
         self.initial_cash = initial_cash
         self.risk = risk_manager or RiskManager()
 
-    def run(self, prices, signals):
+    def run(
+        self,
+        data,
+        signals
+    ):
 
-        portfolio = Portfolio(self.initial_cash)
+        # --------------------------------
+        # Support both legacy Close Series
+        # and new OHLC DataFrame input.
+        # --------------------------------
+
+        if isinstance(
+            data,
+            pd.DataFrame
+        ):
+
+            close_prices = data["Close"]
+
+            if "Open" in data.columns:
+                open_prices = data["Open"]
+            else:
+                open_prices = close_prices
+
+        else:
+
+            close_prices = data
+            open_prices = data
+
+        portfolio = Portfolio(
+            self.initial_cash
+        )
 
         equity_curve = []
         trades = []
 
         entry_price = None
 
-        for i in range(len(prices)):
+        # Signal generated on bar i - 1
+        # is executed on bar i.
+        pending_signal = None
 
-            price = prices.iloc[i]
-            signal = signals[i]
+        for i in range(
+            len(close_prices)
+        ):
 
-            # ----------------------------
-            # Check stop-loss / take-profit
-            # ----------------------------
+            open_price = float(
+                open_prices.iloc[i]
+            )
+
+            close_price = float(
+                close_prices.iloc[i]
+            )
+
+            # =================================
+            # 1. Execute previous bar's signal
+            # =================================
+
+            if pending_signal == "BUY":
+
+                if not portfolio.has_position():
+
+                    buy_price = (
+                        self.risk.buy_price(
+                            open_price
+                        )
+                    )
+
+                    shares = (
+                        self.risk.shares_to_buy(
+                            portfolio.cash,
+                            buy_price
+                        )
+                    )
+
+                    portfolio.buy(
+                        buy_price,
+                        shares,
+                        self.risk.commission
+                    )
+
+                    entry_price = buy_price
+
+                    trades.append(
+                        Trade(
+                            trade_type="BUY",
+                            price=buy_price,
+                            index=i,
+                            shares=shares
+                        )
+                    )
+
+            elif pending_signal == "SELL":
+
+                if portfolio.has_position():
+
+                    sell_price = (
+                        self.risk.sell_price(
+                            open_price
+                        )
+                    )
+
+                    shares = portfolio.shares
+
+                    portfolio.sell(
+                        sell_price,
+                        self.risk.commission
+                    )
+
+                    trades.append(
+                        Trade(
+                            trade_type="SELL",
+                            price=sell_price,
+                            index=i,
+                            shares=shares,
+                            reason="SIGNAL"
+                        )
+                    )
+
+                    entry_price = None
+
+            # =================================
+            # 2. Stop-loss / take-profit
+            # =================================
+            #
+            # Still close-price based for now.
+            # We will replace this with OHLC
+            # intrabar handling separately.
+            # =================================
 
             if portfolio.has_position():
 
-                stop_price = self.risk.stop_price(
-                    entry_price
+                stop_price = (
+                    self.risk.stop_price(
+                        entry_price
+                    )
                 )
 
-                target_price = self.risk.target_price(
-                    entry_price
+                target_price = (
+                    self.risk.target_price(
+                        entry_price
+                    )
                 )
 
                 exit_trade = False
@@ -50,22 +165,26 @@ class BacktestEngine:
 
                 if (
                     stop_price is not None
-                    and price <= stop_price
+                    and close_price <= stop_price
                 ):
+
                     exit_trade = True
                     exit_reason = "STOP_LOSS"
 
                 elif (
                     target_price is not None
-                    and price >= target_price
+                    and close_price >= target_price
                 ):
+
                     exit_trade = True
                     exit_reason = "TAKE_PROFIT"
 
                 if exit_trade:
 
-                    sell_price = self.risk.sell_price(
-                        price
+                    sell_price = (
+                        self.risk.sell_price(
+                            close_price
+                        )
                     )
 
                     shares = portfolio.shares
@@ -87,77 +206,36 @@ class BacktestEngine:
 
                     entry_price = None
 
-                    equity_curve.append(
-                        portfolio.equity(price)
-                    )
-
-                    continue
-
-            # ----------------------------
-            # Strategy signals
-            # ----------------------------
-
-            if signal == "BUY" and not portfolio.has_position():
-
-                buy_price = self.risk.buy_price(
-                    price
-                )
-
-                shares = self.risk.shares_to_buy(
-                    portfolio.cash,
-                    buy_price
-                )
-
-                portfolio.buy(
-                    buy_price,
-                    shares,
-                    self.risk.commission
-                )
-
-                entry_price = buy_price
-
-                trades.append(
-                    Trade(
-                        trade_type="BUY",
-                        price=buy_price,
-                        index=i,
-                        shares=shares
-                    )
-                )
-
-            elif signal == "SELL" and portfolio.has_position():
-
-                sell_price = self.risk.sell_price(
-                    price
-                )
-
-                shares = portfolio.shares
-
-                portfolio.sell(
-                    sell_price,
-                    self.risk.commission
-                )
-
-                trades.append(
-                    Trade(
-                        trade_type="SELL",
-                        price=sell_price,
-                        index=i,
-                        shares=shares,
-                        reason="SIGNAL"
-                    )
-                )
-
-                entry_price = None
+            # =================================
+            # 3. Mark portfolio to market
+            # =================================
 
             equity_curve.append(
-                portfolio.equity(price)
+                portfolio.equity(
+                    close_price
+                )
             )
+
+            # =================================
+            # 4. Signal becomes actionable only
+            #    on the NEXT bar
+            # =================================
+
+            pending_signal = signals[i]
+
+        # =====================================
+        # Close any remaining open position
+        # at the final available close.
+        # =====================================
 
         if portfolio.has_position():
 
-            final_price = self.risk.sell_price(
-                prices.iloc[-1]
+            final_price = (
+                self.risk.sell_price(
+                    float(
+                        close_prices.iloc[-1]
+                    )
+                )
             )
 
             shares = portfolio.shares
@@ -171,14 +249,18 @@ class BacktestEngine:
                 Trade(
                     trade_type="SELL",
                     price=final_price,
-                    index=len(prices) - 1,
+                    index=len(
+                        close_prices
+                    ) - 1,
                     shares=shares,
                     reason="END_OF_DATA"
                 )
             )
 
-            equity_curve[-1] = portfolio.equity(
-                final_price
+            equity_curve[-1] = (
+                portfolio.equity(
+                    final_price
+                )
             )
 
         equity = pd.Series(

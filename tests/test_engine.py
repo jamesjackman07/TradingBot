@@ -6,6 +6,7 @@ from risk.manager import RiskManager
 
 
 def make_prices(values):
+
     return pd.Series(
         values,
         dtype=float
@@ -40,6 +41,7 @@ def test_no_signals_keeps_cash_constant():
     )
 
     assert len(equity) == 3
+
     assert equity.tolist() == [
         10000,
         10000,
@@ -75,34 +77,7 @@ def test_equity_series_is_named_equity():
 # Buying
 # --------------------------------------------------
 
-def test_buy_signal_opens_position():
-
-    prices = make_prices([
-        100,
-        110
-    ])
-
-    signals = [
-        "BUY",
-        "SELL"
-    ]
-
-    engine = BacktestEngine(
-        initial_cash=10000
-    )
-
-    _, trades = engine.run(
-        prices,
-        signals
-    )
-
-    assert trades[0].trade_type == "BUY"
-    assert trades[0].price == pytest.approx(100)
-    assert trades[0].shares == pytest.approx(100)
-    assert trades[0].index == 0
-
-
-def test_duplicate_buy_signal_is_ignored():
+def test_buy_signal_opens_position_next_bar():
 
     prices = make_prices([
         100,
@@ -112,8 +87,8 @@ def test_duplicate_buy_signal_is_ignored():
 
     signals = [
         "BUY",
-        "BUY",
-        "SELL"
+        "HOLD",
+        "HOLD"
     ]
 
     engine = BacktestEngine(
@@ -125,26 +100,66 @@ def test_duplicate_buy_signal_is_ignored():
         signals
     )
 
-    assert len(trades) == 2
+    buy = trades[0]
 
-    assert trades[0].trade_type == "BUY"
-    assert trades[1].trade_type == "SELL"
+    assert buy.trade_type == "BUY"
+    assert buy.price == pytest.approx(110)
+    assert buy.shares == pytest.approx(
+        10000 / 110
+    )
+    assert buy.index == 1
+
+
+def test_duplicate_buy_signal_is_ignored():
+
+    prices = make_prices([
+        100,
+        110,
+        120,
+        130
+    ])
+
+    signals = [
+        "BUY",
+        "BUY",
+        "HOLD",
+        "HOLD"
+    ]
+
+    engine = BacktestEngine(
+        initial_cash=10000
+    )
+
+    _, trades = engine.run(
+        prices,
+        signals
+    )
+
+    buys = [
+        trade
+        for trade in trades
+        if trade.trade_type == "BUY"
+    ]
+
+    assert len(buys) == 1
 
 
 # --------------------------------------------------
 # Selling
 # --------------------------------------------------
 
-def test_sell_signal_closes_position():
+def test_sell_signal_closes_position_next_bar():
 
     prices = make_prices([
         100,
+        110,
         120
     ])
 
     signals = [
         "BUY",
-        "SELL"
+        "SELL",
+        "HOLD"
     ]
 
     engine = BacktestEngine(
@@ -158,15 +173,19 @@ def test_sell_signal_closes_position():
 
     assert len(trades) == 2
 
+    buy = trades[0]
     sell = trades[1]
+
+    assert buy.price == pytest.approx(110)
+    assert buy.index == 1
 
     assert sell.trade_type == "SELL"
     assert sell.price == pytest.approx(120)
-    assert sell.index == 1
+    assert sell.index == 2
     assert sell.reason == "SIGNAL"
 
     assert equity.iloc[-1] == pytest.approx(
-        12000
+        (10000 / 110) * 120
     )
 
 
@@ -174,12 +193,14 @@ def test_sell_without_position_is_ignored():
 
     prices = make_prices([
         100,
-        110
+        110,
+        120
     ])
 
     signals = [
         "SELL",
-        "SELL"
+        "SELL",
+        "HOLD"
     ]
 
     engine = BacktestEngine(
@@ -206,12 +227,14 @@ def test_profitable_trade():
 
     prices = make_prices([
         100,
+        110,
         120
     ])
 
     signals = [
         "BUY",
-        "SELL"
+        "SELL",
+        "HOLD"
     ]
 
     engine = BacktestEngine(
@@ -223,8 +246,12 @@ def test_profitable_trade():
         signals
     )
 
+    expected = (
+        10000 / 110
+    ) * 120
+
     assert equity.iloc[-1] == pytest.approx(
-        12000
+        expected
     )
 
 
@@ -232,12 +259,14 @@ def test_losing_trade():
 
     prices = make_prices([
         100,
+        100,
         80
     ])
 
     signals = [
         "BUY",
-        "SELL"
+        "SELL",
+        "HOLD"
     ]
 
     engine = BacktestEngine(
@@ -258,6 +287,7 @@ def test_open_position_is_marked_to_market():
 
     prices = make_prices([
         100,
+        100,
         110,
         120
     ])
@@ -265,7 +295,8 @@ def test_open_position_is_marked_to_market():
     signals = [
         "BUY",
         "HOLD",
-        "SELL"
+        "HOLD",
+        "HOLD"
     ]
 
     engine = BacktestEngine(
@@ -277,15 +308,24 @@ def test_open_position_is_marked_to_market():
         signals
     )
 
+    # Bar 0:
+    # BUY signal exists but has not
+    # executed yet.
     assert equity.iloc[0] == pytest.approx(
         10000
     )
 
+    # Bar 1:
+    # BUY executes at 100.
     assert equity.iloc[1] == pytest.approx(
-        11000
+        10000
     )
 
     assert equity.iloc[2] == pytest.approx(
+        11000
+    )
+
+    assert equity.iloc[3] == pytest.approx(
         12000
     )
 
@@ -298,7 +338,7 @@ def test_open_position_is_closed_at_end_of_data():
 
     prices = make_prices([
         100,
-        110,
+        100,
         120
     ])
 
@@ -324,6 +364,7 @@ def test_open_position_is_closed_at_end_of_data():
     assert final_trade.trade_type == "SELL"
     assert final_trade.reason == "END_OF_DATA"
     assert final_trade.index == 2
+
     assert final_trade.price == pytest.approx(
         120
     )
@@ -350,12 +391,14 @@ def test_position_size_respects_risk_percent():
 
     prices = make_prices([
         100,
+        100,
         120
     ])
 
     signals = [
         "BUY",
-        "SELL"
+        "SELL",
+        "HOLD"
     ]
 
     equity, trades = engine.run(
@@ -390,30 +433,20 @@ def test_commission_is_charged_on_buy_and_sell():
 
     prices = make_prices([
         100,
+        100,
         120
     ])
 
     signals = [
         "BUY",
-        "SELL"
+        "SELL",
+        "HOLD"
     ]
 
     equity, _ = engine.run(
         prices,
         signals
     )
-
-    # 50 shares:
-    #
-    # Start       = 10000
-    # Buy cost    = 5000
-    # Buy fee     = 10
-    # Cash        = 4990
-    #
-    # Sell value  = 6000
-    # Sell fee    = 10
-    #
-    # Final       = 10980
 
     assert equity.iloc[-1] == pytest.approx(
         10980
@@ -438,12 +471,14 @@ def test_slippage_worsens_execution():
 
     prices = make_prices([
         100,
+        100,
         120
     ])
 
     signals = [
         "BUY",
-        "SELL"
+        "SELL",
+        "HOLD"
     ]
 
     _, trades = engine.run(
@@ -478,12 +513,14 @@ def test_stop_loss_closes_position():
 
     prices = make_prices([
         100,
+        100,
         94,
         110
     ])
 
     signals = [
         "BUY",
+        "HOLD",
         "HOLD",
         "HOLD"
     ]
@@ -499,13 +536,14 @@ def test_stop_loss_closes_position():
 
     assert exit_trade.trade_type == "SELL"
     assert exit_trade.reason == "STOP_LOSS"
-    assert exit_trade.index == 1
+    assert exit_trade.index == 2
+
     assert exit_trade.price == pytest.approx(
         94
     )
 
 
-def test_stop_loss_takes_priority_over_signal_processing():
+def test_stop_loss_is_processed_before_new_signal():
 
     risk = RiskManager(
         risk_percent=50,
@@ -519,12 +557,16 @@ def test_stop_loss_takes_priority_over_signal_processing():
 
     prices = make_prices([
         100,
-        94
+        100,
+        94,
+        110
     ])
 
     signals = [
         "BUY",
-        "SELL"
+        "HOLD",
+        "SELL",
+        "HOLD"
     ]
 
     _, trades = engine.run(
@@ -532,6 +574,9 @@ def test_stop_loss_takes_priority_over_signal_processing():
         signals
     )
 
+    # Position should already have been
+    # stopped before the later SELL
+    # becomes actionable.
     assert trades[-1].reason == "STOP_LOSS"
 
 
@@ -553,12 +598,14 @@ def test_take_profit_closes_position():
 
     prices = make_prices([
         100,
+        100,
         111,
         120
     ])
 
     signals = [
         "BUY",
+        "HOLD",
         "HOLD",
         "HOLD"
     ]
@@ -574,7 +621,8 @@ def test_take_profit_closes_position():
 
     assert exit_trade.trade_type == "SELL"
     assert exit_trade.reason == "TAKE_PROFIT"
-    assert exit_trade.index == 1
+    assert exit_trade.index == 2
+
     assert exit_trade.price == pytest.approx(
         111
     )
@@ -588,12 +636,14 @@ def test_trade_value():
 
     prices = make_prices([
         100,
+        100,
         120
     ])
 
     signals = [
         "BUY",
-        "SELL"
+        "SELL",
+        "HOLD"
     ]
 
     engine = BacktestEngine(
