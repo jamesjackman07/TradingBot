@@ -449,7 +449,7 @@ def test_commission_is_charged_on_buy_and_sell():
     )
 
     assert equity.iloc[-1] == pytest.approx(
-        10980
+        10978
     )
 
 

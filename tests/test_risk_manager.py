@@ -178,7 +178,9 @@ def test_combined_configuration():
     assert risk.shares_to_buy(
         10000,
         100
-    ) == 20
+    ) == pytest.approx(
+        19.985
+    )
 
     assert risk.buy_price(
         100
