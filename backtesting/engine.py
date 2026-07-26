@@ -106,12 +106,33 @@ class BacktestEngine:
                         )
                     )
 
-                    shares = (
-                        self.risk.shares_to_buy(
-                            portfolio.cash,
-                            buy_price
+                    if (
+                        self.risk.risk_per_trade is not None
+                        and self.risk.stop_loss is not None
+                    ):
+
+                        stop_price = (
+                            self.risk.stop_price(
+                                buy_price
+                            )
                         )
-                    )
+
+                        shares = (
+                            self.risk.risk_based_shares(
+                                cash=portfolio.cash,
+                                entry_price=buy_price,
+                                stop_price=stop_price
+                            )
+                        )
+
+                    else:
+
+                        shares = (
+                            self.risk.shares_to_buy(
+                                portfolio.cash,
+                                buy_price
+                            )
+                        )
 
                     portfolio.buy(
                         buy_price,
